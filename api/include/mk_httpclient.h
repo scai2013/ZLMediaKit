@@ -1,9 +1,9 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
@@ -20,7 +20,7 @@ extern "C" {
 
 ///////////////////////////////////////////HttpDownloader/////////////////////////////////////////////
 
-typedef void *mk_http_downloader;
+typedef struct mk_http_downloader_t *mk_http_downloader;
 
 /**
  * @param user_data 用户数据指针
@@ -51,10 +51,10 @@ API_EXPORT void API_CALL mk_http_downloader_release(mk_http_downloader ctx);
  * @param user_data 用户数据指针
  */
 API_EXPORT void API_CALL mk_http_downloader_start(mk_http_downloader ctx, const char *url, const char *file, on_mk_download_complete cb, void *user_data);
-
+API_EXPORT void API_CALL mk_http_downloader_start2(mk_http_downloader ctx, const char *url, const char *file, on_mk_download_complete cb, void *user_data, on_user_data_free user_data_free);
 
 ///////////////////////////////////////////HttpRequester/////////////////////////////////////////////
-typedef void *mk_http_requester;
+typedef struct mk_http_requester_t *mk_http_requester;
 
 /**
  * http请求结果回调
@@ -129,7 +129,7 @@ API_EXPORT const char* API_CALL mk_http_requester_get_response_header(mk_http_re
  * @param length 返回body长度,可以为null
  * @return body指针
  */
-API_EXPORT const char* API_CALL mk_http_requester_get_response_body(mk_http_requester ctx, int *length);
+API_EXPORT const char* API_CALL mk_http_requester_get_response_body(mk_http_requester ctx, size_t *length);
 
 /**
  * 在收到HTTP回复后可调用该方法获取响应
@@ -143,6 +143,7 @@ API_EXPORT mk_parser API_CALL mk_http_requester_get_response(mk_http_requester c
  * @param user_data 用户数据指针
  */
 API_EXPORT void API_CALL mk_http_requester_set_cb(mk_http_requester ctx,on_mk_http_requester_complete cb, void *user_data);
+API_EXPORT void API_CALL mk_http_requester_set_cb2(mk_http_requester ctx,on_mk_http_requester_complete cb, void *user_data, on_user_data_free user_data_free);
 
 /**
  * 开始url请求

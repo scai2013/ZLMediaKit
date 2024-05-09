@@ -1,9 +1,9 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
@@ -18,15 +18,14 @@
 
 namespace mediakit{
 
-class RtmpMuxer : public MediaSinkInterface{
+class RtmpMuxer : public MediaSinkInterface {
 public:
-    typedef std::shared_ptr<RtmpMuxer> Ptr;
+    using Ptr = std::shared_ptr<RtmpMuxer>;
 
     /**
      * 构造函数
      */
     RtmpMuxer(const TitleMeta::Ptr &title);
-    virtual ~RtmpMuxer(){}
 
     /**
      * 获取完整的SDP字符串
@@ -43,13 +42,18 @@ public:
     /**
      * 添加ready状态的track
      */
-    void addTrack(const Track::Ptr & track) override;
+    bool addTrack(const Track::Ptr & track) override;
 
     /**
      * 写入帧数据
      * @param frame 帧
      */
-    void inputFrame(const Frame::Ptr &frame) override;
+    bool inputFrame(const Frame::Ptr &frame) override;
+
+    /**
+     * 刷新输出所有frame缓存
+     */
+    void flush() override;
 
     /**
      * 重置所有track
@@ -60,10 +64,13 @@ public:
      * 生成config包
      */
      void makeConfigPacket();
+
 private:
-    RtmpRing::RingType::Ptr _rtmp_ring;
+    bool _track_existed[2] = { false, false };
+
     AMFValue _metadata;
-    RtmpCodec::Ptr _encoder[TrackMax];
+    RtmpRing::RingType::Ptr _rtmp_ring;
+    std::unordered_map<int, RtmpCodec::Ptr> _encoders;
 };
 
 

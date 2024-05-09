@@ -1,9 +1,9 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
@@ -11,7 +11,6 @@
 #include <map>
 #include <signal.h>
 #include <iostream>
-#include "Util/File.h"
 #include "Util/SSLBox.h"
 #include "Util/logger.h"
 #include "Util/onceToken.h"
@@ -44,7 +43,7 @@ void initEventListener(){
     static onceToken s_token([](){
         NoticeCenter::Instance().addListener(nullptr,Broadcast::kBroadcastHttpRequest,[](BroadcastHttpRequestArgs){
             //const Parser &parser,HttpSession::HttpResponseInvoker &invoker,bool &consumed
-            if(strstr(parser.Url().data(),"/api/") != parser.Url().data()){
+            if(strstr(parser.url().data(),"/api/") != parser.url().data()){
                 return;
             }
             //url以"/api/起始，说明是http api"
@@ -52,11 +51,11 @@ void initEventListener(){
 
             _StrPrinter printer;
             ////////////////method////////////////////
-            printer << "\r\nmethod:\r\n\t" << parser.Method();
+            printer << "\r\nmethod:\r\n\t" << parser.method();
             ////////////////url/////////////////
-            printer << "\r\nurl:\r\n\t" << parser.Url();
+            printer << "\r\nurl:\r\n\t" << parser.url();
             ////////////////protocol/////////////////
-            printer << "\r\nprotocol:\r\n\t" << parser.Tail();
+            printer << "\r\nprotocol:\r\n\t" << parser.protocol();
             ///////////////args//////////////////
             printer << "\r\nargs:\r\n";
             for(auto &pr : parser.getUrlArgs()){
@@ -68,7 +67,7 @@ void initEventListener(){
                 printer <<  "\t" << pr.first << " : " << pr.second << "\r\n";
             }
             ////////////////content/////////////////
-            printer << "\r\ncontent:\r\n" << parser.Content();
+            printer << "\r\ncontent:\r\n" << parser.content();
             auto contentOut = printer << endl;
 
             ////////////////我们测算异步回复，当然你也可以同步回复/////////////////
@@ -79,7 +78,7 @@ void initEventListener(){
                 //请勿覆盖Connection、Content-Length键
                 //键名覆盖时不区分大小写
                 headerOut["TestHeader"] = "HeaderValue";
-                invoker("200 OK",headerOut,contentOut);
+                invoker(200,headerOut,contentOut);
             });
         });
     }, nullptr);
@@ -114,7 +113,7 @@ int main(int argc,char *argv[]){
     TcpServer::Ptr httpsSrv(new TcpServer());
     httpsSrv->start<HttpsSession>(mINI::Instance()[Http::kSSLPort]);//默认443
 
-    InfoL << "你可以在浏览器输入:http://127.0.0.1/api/my_api?key0=val0&key1=参数1" << endl;
+    InfoL << "你可以在浏览器输入:http://127.0.0.1/api/my_api?key0=val0&key1=参数1";
 
     sem.wait();
     return 0;

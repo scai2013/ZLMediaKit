@@ -1,9 +1,9 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
@@ -13,7 +13,6 @@
 #include <iostream>
 
 #include "Util/MD5.h"
-#include "Util/File.h"
 #include "Util/logger.h"
 #include "Util/SSLBox.h"
 #include "Util/onceToken.h"
@@ -83,33 +82,29 @@ onceToken token1([](){
 }  // namespace mediakit
 
 
-#define REALM "realm_zlmedaikit"
+#define REALM "realm_zlmediakit"
 static map<string,FlvRecorder::Ptr> s_mapFlvRecorder;
 static mutex s_mtxFlvRecorder;
 
 void initEventListener() {
     static onceToken s_token([]() {
         //监听kBroadcastOnGetRtspRealm事件决定rtsp链接是否需要鉴权(传统的rtsp鉴权方案)才能访问
-        NoticeCenter::Instance().addListener(nullptr, Broadcast::kBroadcastOnGetRtspRealm,
-                                             [](BroadcastOnGetRtspRealmArgs) {
-                                                 DebugL << "RTSP是否需要鉴权事件：" << args._schema << " " << args._vhost << " "
-                                                        << args._app << " " << args._streamid << " "
-                                                        << args._param_strs;
-                                                 if (string("1") == args._streamid) {
-                                                     // live/1需要认证
-                                                     //该流需要认证，并且设置realm
-                                                     invoker(REALM);
-                                                 } else {
-                                                     //有时我们要查询redis或数据库来判断该流是否需要认证，通过invoker的方式可以做到完全异步
-                                                     //该流我们不需要认证
-                                                     invoker("");
-                                                 }
-                                             });
+        NoticeCenter::Instance().addListener(nullptr, Broadcast::kBroadcastOnGetRtspRealm, [](BroadcastOnGetRtspRealmArgs) {
+             DebugL << "RTSP是否需要鉴权事件：" << args.getUrl() << " " << args.params;
+             if (string("1") == args.stream) {
+                 // live/1需要认证
+                 //该流需要认证，并且设置realm
+                 invoker(REALM);
+             } else {
+                 //有时我们要查询redis或数据库来判断该流是否需要认证，通过invoker的方式可以做到完全异步
+                 //该流我们不需要认证
+                 invoker("");
+             }
+         });
 
         //监听kBroadcastOnRtspAuth事件返回正确的rtsp鉴权用户密码
         NoticeCenter::Instance().addListener(nullptr, Broadcast::kBroadcastOnRtspAuth, [](BroadcastOnRtspAuthArgs) {
-            DebugL << "RTSP播放鉴权:" << args._schema << " " << args._vhost << " " << args._app << " " << args._streamid
-                   << " " << args._param_strs;
+            DebugL << "RTSP播放鉴权:" << args.getUrl() << " " << args.params;
             DebugL << "RTSP用户：" << user_name << (must_no_encrypt ? " Base64" : " MD5") << " 方式登录";
             string user = user_name;
             //假设我们异步读取数据库
@@ -139,16 +134,14 @@ void initEventListener() {
 
         //监听rtsp/rtmp推流事件，返回结果告知是否有推流权限
         NoticeCenter::Instance().addListener(nullptr, Broadcast::kBroadcastMediaPublish, [](BroadcastMediaPublishArgs) {
-            DebugL << "推流鉴权：" << args._schema << " " << args._vhost << " " << args._app << " " << args._streamid << " "
-                   << args._param_strs;
-            invoker("", true, false);//鉴权成功
+            DebugL << "推流鉴权：" << args.getUrl() << " " << args.params;
+            invoker("", ProtocolOption());//鉴权成功
             //invoker("this is auth failed message");//鉴权失败
         });
 
         //监听rtsp/rtsps/rtmp/http-flv播放事件，返回结果告知是否有播放权限(rtsp通过kBroadcastOnRtspAuth或此事件都可以实现鉴权)
         NoticeCenter::Instance().addListener(nullptr, Broadcast::kBroadcastMediaPlayed, [](BroadcastMediaPlayedArgs) {
-            DebugL << "播放鉴权:" << args._schema << " " << args._vhost << " " << args._app << " " << args._streamid << " "
-                   << args._param_strs;
+            DebugL << "播放鉴权:" << args.getUrl() << " " << args.params;
             invoker("");//鉴权成功
             //invoker("this is auth failed message");//鉴权失败
         });
@@ -162,45 +155,41 @@ void initEventListener() {
 
         //监听rtsp、rtmp源注册或注销事件；此处用于测试rtmp保存为flv录像，保存在http根目录下
         NoticeCenter::Instance().addListener(nullptr, Broadcast::kBroadcastMediaChanged, [](BroadcastMediaChangedArgs) {
-            if (sender.getSchema() == RTMP_SCHEMA && sender.getApp() == "live") {
+            auto tuple = sender.getMediaTuple();
+            if (sender.getSchema() == RTMP_SCHEMA && tuple.app == "live") {
                 lock_guard<mutex> lck(s_mtxFlvRecorder);
+                auto key = tuple.shortUrl();
                 if (bRegist) {
-                    DebugL << "开始录制RTMP：" << sender.getSchema() << " " << sender.getVhost() << " " << sender.getApp() << " " << sender.getId();
+                    DebugL << "开始录制RTMP：" << sender.getUrl();
                     GET_CONFIG(string, http_root, Http::kRootPath);
-                    auto path =
-                            http_root + "/" + sender.getVhost() + "/" + sender.getApp() + "/" + sender.getId() + "_" + to_string(time(NULL)) + ".flv";
+                    auto path = http_root + "/" + key + "_" + to_string(time(NULL)) + ".flv";
                     FlvRecorder::Ptr recorder(new FlvRecorder);
                     try {
                         recorder->startRecord(EventPollerPool::Instance().getPoller(),
                                               dynamic_pointer_cast<RtmpMediaSource>(sender.shared_from_this()), path);
-                        s_mapFlvRecorder[sender.getVhost() + "/" + sender.getApp() + "/" + sender.getId()] = recorder;
+                        s_mapFlvRecorder[key] = recorder;
                     } catch (std::exception &ex) {
                         WarnL << ex.what();
                     }
                 } else {
-                    s_mapFlvRecorder.erase(sender.getVhost() + "/" + sender.getApp() + "/" + sender.getId());
+                    s_mapFlvRecorder.erase(key);
                 }
             }
         });
 
         //监听播放失败(未找到特定的流)事件
-        NoticeCenter::Instance().addListener(nullptr, Broadcast::kBroadcastNotFoundStream,
-                                             [](BroadcastNotFoundStreamArgs) {
-                                                 /**
-                                                  * 你可以在这个事件触发时再去拉流，这样就可以实现按需拉流
-                                                  * 拉流成功后，ZLMediaKit会把其立即转发给播放器(最大等待时间约为5秒，如果5秒都未拉流成功，播放器会播放失败)
-                                                  */
-                                                 DebugL << "未找到流事件:" << args._schema << " " << args._vhost << " "
-                                                        << args._app << " " << args._streamid << " "
-                                                        << args._param_strs;
-                                             });
+        NoticeCenter::Instance().addListener(nullptr, Broadcast::kBroadcastNotFoundStream, [](BroadcastNotFoundStreamArgs) {
+            /**
+             * 你可以在这个事件触发时再去拉流，这样就可以实现按需拉流
+             * 拉流成功后，ZLMediaKit会把其立即转发给播放器(最大等待时间约为5秒，如果5秒都未拉流成功，播放器会播放失败)
+             */
+            DebugL << "未找到流事件:" << args.getUrl() << " " << args.params;
+        });
 
 
         //监听播放或推流结束时消耗流量事件
         NoticeCenter::Instance().addListener(nullptr, Broadcast::kBroadcastFlowReport, [](BroadcastFlowReportArgs) {
-            DebugL << "播放器(推流器)断开连接事件:" << args._schema << " " << args._vhost << " " << args._app << " "
-                   << args._streamid << " " << args._param_strs
-                   << "\r\n使用流量:" << totalBytes << " bytes,连接时长:" << totalDuration << "秒";
+            DebugL << "播放器(推流器)断开连接事件:" << args.getUrl() << " " << args.params << "\r\n使用流量:" << totalBytes << " bytes,连接时长:" << totalDuration << "秒";
 
         });
 
@@ -242,9 +231,9 @@ int main(int argc,char *argv[]) {
         //rtsp://127.0.0.1/record/live/0/2017-04-11/11-09-38.mp4
         //rtmp://127.0.0.1/record/live/0/2017-04-11/11-09-38.mp4
 
-        PlayerProxy::Ptr player(new PlayerProxy(DEFAULT_VHOST, "live", std::string("chn") + to_string(i).data()));
+        PlayerProxy::Ptr player(new PlayerProxy(DEFAULT_VHOST, "live", std::string("chn") + to_string(i).data(), ProtocolOption()));
         //指定RTP over TCP(播放rtsp时有效)
-        (*player)[kRtpType] = Rtsp::RTP_TCP;
+        (*player)[Client::kRtpType] = Rtsp::RTP_TCP;
         //开始播放，如果播放失败或者播放中止，将会自动重试若干次，重试次数在配置文件中配置，默认一直重试
         player->play(url);
         //需要保存PlayerProxy，否则作用域结束就会销毁该对象

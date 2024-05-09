@@ -1,9 +1,9 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
@@ -12,33 +12,31 @@
 #define ZLMEDIAKIT_RTPPROCESS_H
 
 #if defined(ENABLE_RTPPROXY)
+#include "ProcessInterface.h"
+#include "Rtcp/RtcpContext.h"
+#include "Common/MultiMediaSourceMuxer.h"
 
-#include "Rtsp/RtpReceiver.h"
-#include "Decoder.h"
-#include "Common/Device.h"
-#include "Common/Stamp.h"
-#include "Http/HttpRequestSplitter.h"
-#include "Extension/CommonRtp.h"
-using namespace mediakit;
+namespace mediakit {
 
-namespace mediakit{
-
-class RtpProcess : public HttpRequestSplitter, public RtpReceiver, public SockInfo, public MediaSinkInterface, public std::enable_shared_from_this<RtpProcess>{
+class RtpProcess final : public RtcpContextForRecv, public toolkit::SockInfo, public MediaSinkInterface, public MediaSourceEventInterceptor, public std::enable_shared_from_this<RtpProcess>{
 public:
-    typedef std::shared_ptr<RtpProcess> Ptr;
-    RtpProcess(const string &stream_id);
+    using Ptr = std::shared_ptr<RtpProcess>;
+    friend class RtpProcessHelper;
+    RtpProcess(const std::string &stream_id);
     ~RtpProcess();
+    enum OnlyTrack { kAll = 0, kOnlyAudio = 1, kOnlyVideo = 2 };
 
     /**
      * 输入rtp
+     * @param is_udp 是否为udp模式
      * @param sock 本地监听的socket
      * @param data rtp数据指针
-     * @param data_len rtp数据长度
+     * @param len rtp数据长度
      * @param addr 数据源地址
      * @param dts_out 解析出最新的dts
      * @return 是否解析成功
      */
-    bool inputRtp(const Socket::Ptr &sock, const char *data,int data_len, const struct sockaddr *addr , uint32_t *dts_out = nullptr);
+    bool inputRtp(bool is_udp, const toolkit::Socket::Ptr &sock, const char *data, size_t len, const struct sockaddr *addr , uint64_t *dts_out = nullptr);
 
     /**
      * 是否超时，用于超时移除对象
@@ -53,47 +51,66 @@ public:
     /**
      * 设置onDetach事件回调
      */
-    void setOnDetach(const function<void()> &cb);
+    void setOnDetach(std::function<void()> cb);
+
+    /**
+     * 设置onDetach事件回调,false检查RTP超时，true停止
+     */
+    void setStopCheckRtp(bool is_check=false);
+
+    /**
+     * 设置为单track，单音频/单视频时可以加快媒体注册速度
+     * 请在inputRtp前调用此方法，否则可能会是空操作
+     */
+    void setOnlyTrack(OnlyTrack only_track);
+
+    /**
+     * flush输出缓存
+     */
+    void flush() override;
 
     /// SockInfo override
-    string get_local_ip() override;
+    std::string get_local_ip() override;
     uint16_t get_local_port() override;
-    string get_peer_ip() override;
+    std::string get_peer_ip() override;
     uint16_t get_peer_port() override;
-    string getIdentifier() const override;
-
-    int totalReaderCount();
-    void setListener(const std::weak_ptr<MediaSourceEvent> &listener);
+    std::string getIdentifier() const override;
 
 protected:
-    void onRtpSorted(const RtpPacket::Ptr &rtp, int track_index) override ;
-    void inputFrame(const Frame::Ptr &frame) override;
-    void addTrack(const Track::Ptr & track) override;
+    bool inputFrame(const Frame::Ptr &frame) override;
+    bool addTrack(const Track::Ptr & track) override;
+    void addTrackCompleted() override;
     void resetTracks() override {};
 
-    const char *onSearchPacketTail(const char *data,int len) override;
-    int64_t onRecvHeader(const char *data,uint64_t len) override { return 0; };
+    //// MediaSourceEvent override ////
+    MediaOriginType getOriginType(MediaSource &sender) const override;
+    std::string getOriginUrl(MediaSource &sender) const override;
+    std::shared_ptr<SockInfo> getOriginSock(MediaSource &sender) const override;
+    toolkit::EventPoller::Ptr getOwnerPoller(MediaSource &sender) override;
+    float getLossRate(MediaSource &sender, TrackType type) override;
 
 private:
     void emitOnPublish();
-    void onRtpDecode(const uint8_t *packet, int bytes, uint32_t timestamp);
+    void doCachedFunc();
 
 private:
-    std::shared_ptr<CommonRtpDecoder> _rtp_decoder;
-    std::shared_ptr<FILE> _save_file_rtp;
-    std::shared_ptr<FILE> _save_file_ps;
-    std::shared_ptr<FILE> _save_file_video;
-    struct sockaddr *_addr = nullptr;
-    uint16_t _sequence = 0;
-    MultiMediaSourceMuxer::Ptr _muxer;
-    Ticker _last_rtp_time;
-    uint32_t _dts = 0;
-    DecoderImp::Ptr _decoder;
-    std::weak_ptr<MediaSourceEvent> _listener;
-    MediaInfo _media_info;
+    OnlyTrack _only_track = kAll;
+    std::string _auth_err;
+    uint64_t _dts = 0;
     uint64_t _total_bytes = 0;
-    Socket::Ptr _sock;
-    function<void()> _on_detach;
+    std::unique_ptr<sockaddr_storage> _addr;
+    toolkit::Socket::Ptr _sock;
+    MediaInfo _media_info;
+    toolkit::Ticker _last_frame_time;
+    std::function<void()> _on_detach;
+    std::shared_ptr<FILE> _save_file_rtp;
+    std::shared_ptr<FILE> _save_file_video;
+    ProcessInterface::Ptr _process;
+    MultiMediaSourceMuxer::Ptr _muxer;
+    std::atomic_bool _stop_rtp_check{false};
+    toolkit::Ticker _last_check_alive;
+    std::recursive_mutex _func_mtx;
+    std::deque<std::function<void()> > _cached_func;
 };
 
 }//namespace mediakit

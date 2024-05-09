@@ -1,18 +1,22 @@
 ﻿/*
  * Copyright (c) 2020 The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
 
 #include <cstdlib>
+#include <cinttypes>
 #include "HlsParser.h"
 #include "Util/util.h"
 #include "Common/Parser.h"
+
+using namespace std;
 using namespace toolkit;
+
 namespace mediakit {
 
 bool HlsParser::parse(const string &http_url, const string &m3u8) {
@@ -33,15 +37,7 @@ bool HlsParser::parse(const string &http_url, const string &m3u8) {
 
         if ((_is_m3u8_inner || extinf_dur != 0) && line[0] != '#') {
             segment.duration = extinf_dur;
-            if (line.find("http://") == 0 || line.find("https://") == 0) {
-                segment.url = line;
-            } else {
-                if (line.find("/") == 0) {
-                    segment.url = http_url.substr(0, http_url.find("/", 8)) + line;
-                } else {
-                    segment.url = http_url.substr(0, http_url.rfind("/") + 1) + line;
-                }
-            }
+            segment.url = Parser::mergeUrl(http_url, line);
             if (!_is_m3u8_inner) {
                 //ts按照先后顺序排序
                 ts_map.emplace(index++, segment);
@@ -90,7 +86,7 @@ bool HlsParser::parse(const string &http_url, const string &m3u8) {
         }
 
         if (line.find("#EXT-X-MEDIA-SEQUENCE:") == 0) {
-            sscanf(line.data(), "#EXT-X-MEDIA-SEQUENCE:%lld", &_sequence);
+            sscanf(line.data(), "#EXT-X-MEDIA-SEQUENCE:%" PRId64, &_sequence);
             continue;
         }
 
@@ -102,17 +98,14 @@ bool HlsParser::parse(const string &http_url, const string &m3u8) {
         continue;
     }
 
-    if (_is_m3u8) {
-        onParsed(_is_m3u8_inner, _sequence, ts_map);
-    }
-    return _is_m3u8;
+    return _is_m3u8 && onParsed(_is_m3u8_inner, _sequence, ts_map);
 }
 
 bool HlsParser::isM3u8() const {
     return _is_m3u8;
 }
 
-bool HlsParser::isLive() const{
+bool HlsParser::isLive() const {
     return _is_live;
 }
 
@@ -128,12 +121,16 @@ int HlsParser::getTargetDur() const {
     return _target_dur;
 }
 
-int HlsParser::getSequence() const {
+int64_t HlsParser::getSequence() const {
     return _sequence;
 }
 
 bool HlsParser::isM3u8Inner() const {
     return _is_m3u8_inner;
+}
+
+float HlsParser::getTotalDuration() const {
+    return _total_dur;
 }
 
 }//namespace mediakit

@@ -1,9 +1,9 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
@@ -11,17 +11,13 @@
 #ifndef SRC_HTTP_COOKIEMANAGER_H
 #define SRC_HTTP_COOKIEMANAGER_H
 
-#include <memory>
-#include <unordered_map>
+#include "Common/Parser.h"
+#include "Network/Socket.h"
+#include "Util/TimeTicker.h"
 #include "Util/mini.h"
 #include "Util/util.h"
-#include "Util/TimeTicker.h"
-#include "Network/Socket.h"
-#include "Common/Parser.h"
-
-using namespace std;
-using namespace toolkit;
-using namespace mediakit;
+#include <memory>
+#include <unordered_map>
 
 #define COOKIE_DEFAULT_LIFE (7 * 24 * 60 * 60)
 
@@ -32,9 +28,9 @@ class HttpCookieManager;
 /**
  * cookie对象，用于保存cookie的一些相关属性
  */
-class HttpServerCookie : public AnyStorage , public noncopyable{
+class HttpServerCookie : public toolkit::noncopyable {
 public:
-    typedef std::shared_ptr<HttpServerCookie> Ptr;
+    using Ptr = std::shared_ptr<HttpServerCookie>;
     /**
      * 构建cookie
      * @param manager cookie管理者对象
@@ -44,18 +40,16 @@ public:
      * @param max_elapsed 最大过期时间，单位秒
      */
 
-    HttpServerCookie(const std::shared_ptr<HttpCookieManager> &manager,
-                     const string &cookie_name,
-                     const string &uid,
-                     const string &cookie,
-                     uint64_t max_elapsed);
-    ~HttpServerCookie() ;
+    HttpServerCookie(
+        const std::shared_ptr<HttpCookieManager> &manager, const std::string &cookie_name, const std::string &uid,
+        const std::string &cookie, uint64_t max_elapsed);
+    ~HttpServerCookie();
 
     /**
      * 获取uid
      * @return uid
      */
-    const string &getUid() const;
+    const std::string &getUid() const;
 
     /**
      * 获取http中Set-Cookie字段的值
@@ -63,19 +57,19 @@ public:
      * @param path http访问路径
      * @return 例如 MY_SESSION=XXXXXX;expires=Wed, Jun 12 2019 06:30:48 GMT;path=/index/files/
      */
-    string getCookie(const string &path) const;
+    std::string getCookie(const std::string &path) const;
 
     /**
      * 获取cookie随机字符串
      * @return cookie随机字符串
      */
-    const string& getCookie() const;
+    const std::string &getCookie() const;
 
     /**
      * 获取该cookie名
      * @return
      */
-    const string& getCookieName() const;
+    const std::string &getCookieName() const;
 
     /**
      * 更新该cookie的过期时间，可以让此cookie不失效
@@ -89,46 +83,55 @@ public:
     bool isExpired();
 
     /**
-     * 获取区域锁
-     * @return
+     * 设置附加数据
      */
-    std::shared_ptr<lock_guard<recursive_mutex> > getLock();
+    void setAttach(toolkit::Any attach);
+
+    /*
+     * 获取附加数据
+     */
+    template <class T>
+    T& getAttach() {
+        return _attach.get<T>();
+    }
+
 private:
-    string cookieExpireTime() const ;
+    std::string cookieExpireTime() const;
+
 private:
-    string _uid;
-    string _cookie_name;
-    string _cookie_uuid;
+    std::string _uid;
+    std::string _cookie_name;
+    std::string _cookie_uuid;
     uint64_t _max_elapsed;
-    Ticker _ticker;
-    recursive_mutex _mtx;
+    toolkit::Ticker _ticker;
+    toolkit::Any _attach;
     std::weak_ptr<HttpCookieManager> _manager;
 };
 
 /**
  * cookie随机字符串生成器
  */
-class RandStrGeneator{
+class RandStrGenerator {
 public:
-    RandStrGeneator() = default;
-    ~RandStrGeneator() = default;
 
     /**
      * 获取不碰撞的随机字符串
      * @return 随机字符串
      */
-    string obtain();
+    std::string obtain();
 
     /**
      * 释放随机字符串
      * @param str 随机字符串
      */
-    void release(const string &str);
+    void release(const std::string &str);
+
 private:
-    string obtain_l();
+    std::string obtain_l();
+
 private:
     //碰撞库
-    unordered_set<string> _obtained;
+    std::unordered_set<std::string> _obtained;
     //增长index，防止碰撞用
     int _index = 0;
 };
@@ -139,8 +142,8 @@ private:
  */
 class HttpCookieManager : public std::enable_shared_from_this<HttpCookieManager> {
 public:
-    typedef std::shared_ptr<HttpCookieManager> Ptr;
     friend class HttpServerCookie;
+    using Ptr =  std::shared_ptr<HttpCookieManager>;
     ~HttpCookieManager();
 
     /**
@@ -156,7 +159,10 @@ public:
      * @param max_elapsed 该cookie过期时间，单位秒
      * @return cookie对象
      */
-    HttpServerCookie::Ptr addCookie(const string &cookie_name,const string &uid, uint64_t max_elapsed = COOKIE_DEFAULT_LIFE,int max_client = 1);
+    HttpServerCookie::Ptr addCookie(
+        const std::string &cookie_name, const std::string &uid, uint64_t max_elapsed = COOKIE_DEFAULT_LIFE,
+        toolkit::Any = toolkit::Any{},
+        int max_client = 1);
 
     /**
      * 根据cookie随机字符串查找cookie对象
@@ -164,7 +170,7 @@ public:
      * @param cookie cookie随机字符串
      * @return cookie对象，可以为nullptr
      */
-    HttpServerCookie::Ptr getCookie(const string &cookie_name,const string &cookie);
+    HttpServerCookie::Ptr getCookie(const std::string &cookie_name, const std::string &cookie);
 
     /**
      * 从http头中获取cookie对象
@@ -172,7 +178,7 @@ public:
      * @param http_header http头
      * @return cookie对象
      */
-    HttpServerCookie::Ptr getCookie(const string &cookie_name,const StrCaseMap &http_header);
+    HttpServerCookie::Ptr getCookie(const std::string &cookie_name, const StrCaseMap &http_header);
 
     /**
      * 根据uid获取cookie
@@ -180,7 +186,7 @@ public:
      * @param uid 用户id
      * @return cookie对象
      */
-    HttpServerCookie::Ptr getCookieByUid(const string &cookie_name,const string &uid);
+    HttpServerCookie::Ptr getCookieByUid(const std::string &cookie_name, const std::string &uid);
 
     /**
      * 删除cookie，用户登出时使用
@@ -188,8 +194,10 @@ public:
      * @return
      */
     bool delCookie(const HttpServerCookie::Ptr &cookie);
+
 private:
     HttpCookieManager();
+
     void onManager();
     /**
      * 构造cookie对象时触发，目的是记录某账号下多个cookie
@@ -197,7 +205,7 @@ private:
      * @param uid 用户id
      * @param cookie cookie随机字符串
      */
-    void onAddCookie(const string &cookie_name,const string &uid,const string &cookie);
+    void onAddCookie(const std::string &cookie_name, const std::string &uid, const std::string &cookie);
 
     /**
      * 析构cookie对象时触发
@@ -205,7 +213,7 @@ private:
      * @param uid 用户id
      * @param cookie cookie随机字符串
      */
-    void onDelCookie(const string &cookie_name,const string &uid,const string &cookie);
+    void onDelCookie(const std::string &cookie_name, const std::string &uid, const std::string &cookie);
 
     /**
      * 获取某用户名下最先登录时的cookie，目的是实现某用户下最多登录若干个设备
@@ -214,7 +222,7 @@ private:
      * @param max_client 最多登录的设备个数
      * @return 最早的cookie随机字符串
      */
-    string getOldestCookie(const string &cookie_name,const string &uid, int max_client = 1);
+    std::string getOldestCookie(const std::string &cookie_name, const std::string &uid, int max_client = 1);
 
     /**
      * 删除cookie
@@ -222,16 +230,21 @@ private:
      * @param cookie cookie随机字符串
      * @return 成功true
      */
-    bool delCookie(const string &cookie_name,const string &cookie);
+    bool delCookie(const std::string &cookie_name, const std::string &cookie);
+
 private:
-    unordered_map<string/*cookie_name*/,unordered_map<string/*cookie*/,HttpServerCookie::Ptr/*cookie_data*/> >_map_cookie;
-    unordered_map<string/*cookie_name*/,unordered_map<string/*uid*/,map<uint64_t/*cookie time stamp*/,string/*cookie*/> > >_map_uid_to_cookie;
-    recursive_mutex _mtx_cookie;
-    Timer::Ptr _timer;
-    RandStrGeneator _geneator;
+    std::unordered_map<
+        std::string /*cookie_name*/, std::unordered_map<std::string /*cookie*/, HttpServerCookie::Ptr /*cookie_data*/>>
+        _map_cookie;
+    std::unordered_map<
+        std::string /*cookie_name*/,
+        std::unordered_map<std::string /*uid*/, std::map<uint64_t /*cookie time stamp*/, std::string /*cookie*/>>>
+        _map_uid_to_cookie;
+    std::recursive_mutex _mtx_cookie;
+    toolkit::Timer::Ptr _timer;
+    RandStrGenerator _generator;
 };
 
-}//namespace mediakit
+} // namespace mediakit
 
-
-#endif //SRC_HTTP_COOKIEMANAGER_H
+#endif // SRC_HTTP_COOKIEMANAGER_H

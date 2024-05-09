@@ -1,9 +1,9 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
@@ -14,6 +14,7 @@
 #include "Util/MD5.h"
 #include "Util/logger.h"
 #include "Http/WebSocketClient.h"
+
 using namespace std;
 using namespace toolkit;
 using namespace mediakit;
@@ -31,8 +32,8 @@ protected:
         DebugL << pBuf->toString();
     }
     //被动断开连接回调
-    void onErr(const SockException &ex) override {
-        WarnL << ex.what();
+    void onError(const SockException &ex) override {
+        WarnL << ex;
     }
     //tcp连接成功后每2秒触发一次该事件
     void onManager() override {
@@ -41,7 +42,7 @@ protected:
     }
     //连接服务器结果回调
     void onConnect(const SockException &ex) override{
-        DebugL << ex.what();
+        DebugL << ex;
     }
 
     //数据全部发送完毕后回调

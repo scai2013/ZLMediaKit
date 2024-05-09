@@ -1,15 +1,16 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
 
 #include <memory.h>
 #include <set>
+#include <deque>
 #include "Util/CMD.h"
 #include "Util/util.h"
 #include "Util/logger.h"
@@ -44,8 +45,8 @@ public:
 
 vector<string> split(const string& s, const char *delim) {
     vector<string> ret;
-    int last = 0;
-    int index = s.find(delim, last);
+    size_t last = 0;
+    auto index = s.find(delim, last);
     while (index != string::npos) {
         if (index - last >= 0) {
             ret.push_back(s.substr(last, index - last));

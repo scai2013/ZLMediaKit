@@ -1,9 +1,9 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
@@ -16,23 +16,29 @@
 
 namespace mediakit {
 
-class RtmpMediaSourceMuxer : public RtmpMuxer, public MediaSourceEventInterceptor,
-                             public std::enable_shared_from_this<RtmpMediaSourceMuxer> {
+class RtmpMediaSourceMuxer final : public RtmpMuxer, public MediaSourceEventInterceptor,
+                                   public std::enable_shared_from_this<RtmpMediaSourceMuxer> {
 public:
-    typedef std::shared_ptr<RtmpMediaSourceMuxer> Ptr;
+    using Ptr = std::shared_ptr<RtmpMediaSourceMuxer>;
 
-    RtmpMediaSourceMuxer(const string &vhost,
-                         const string &strApp,
-                         const string &strId,
-                         const TitleMeta::Ptr &title = nullptr) : RtmpMuxer(title){
-        _media_src = std::make_shared<RtmpMediaSource>(vhost, strApp, strId);
+    RtmpMediaSourceMuxer(const MediaTuple& tuple,
+                         const ProtocolOption &option,
+                         const TitleMeta::Ptr &title = nullptr) : RtmpMuxer(title) {
+        _option = option;
+        _media_src = std::make_shared<RtmpMediaSource>(tuple);
         getRtmpRing()->setDelegate(_media_src);
     }
 
-    ~RtmpMediaSourceMuxer() override{}
+    ~RtmpMediaSourceMuxer() override {
+        try {
+            RtmpMuxer::flush();
+        } catch (std::exception &ex) {
+            WarnL << ex.what();
+        }
+    }
 
     void setListener(const std::weak_ptr<MediaSourceEvent> &listener){
-        _listener = listener;
+        setDelegate(listener);
         _media_src->setListener(shared_from_this());
     }
 
@@ -44,37 +50,40 @@ public:
         return _media_src->readerCount();
     }
 
-    void onAllTrackReady(){
+    void addTrackCompleted() override {
+        RtmpMuxer::addTrackCompleted();
         makeConfigPacket();
         _media_src->setMetaData(getMetadata());
     }
 
     void onReaderChanged(MediaSource &sender, int size) override {
-        _enabled = size;
-        if (!size) {
+        _enabled = _option.rtmp_demand ? size : true;
+        if (!size && _option.rtmp_demand) {
             _clear_cache = true;
         }
         MediaSourceEventInterceptor::onReaderChanged(sender, size);
     }
 
-    void inputFrame(const Frame::Ptr &frame) override {
-        if (_clear_cache) {
+    bool inputFrame(const Frame::Ptr &frame) override {
+        if (_clear_cache && _option.rtmp_demand) {
             _clear_cache = false;
             _media_src->clearCache();
         }
-        if (_enabled) {
-            RtmpMuxer::inputFrame(frame);
+        if (_enabled || !_option.rtmp_demand) {
+            return RtmpMuxer::inputFrame(frame);
         }
+        return false;
     }
 
     bool isEnabled() {
         //缓存尚未清空时，还允许触发inputFrame函数，以便及时清空缓存
-        return _clear_cache ? true : _enabled;
+        return _option.rtmp_demand ? (_clear_cache ? true : _enabled) : true;
     }
 
 private:
     bool _enabled = true;
     bool _clear_cache = false;
+    ProtocolOption _option;
     RtmpMediaSource::Ptr _media_src;
 };
 

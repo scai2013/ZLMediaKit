@@ -1,9 +1,9 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
@@ -12,61 +12,31 @@
 #define ZLMEDIAKIT_MULTIMEDIASOURCEMUXER_H
 
 #include "Common/Stamp.h"
-#include "Rtp/PSRtpSender.h"
+#include "Common/MediaSource.h"
+#include "Common/MediaSink.h"
 #include "Record/Recorder.h"
+#include "Rtp/RtpSender.h"
 #include "Record/HlsRecorder.h"
 #include "Record/HlsMediaSource.h"
 #include "Rtsp/RtspMediaSourceMuxer.h"
 #include "Rtmp/RtmpMediaSourceMuxer.h"
+#include "TS/TSMediaSourceMuxer.h"
+#include "FMP4/FMP4MediaSourceMuxer.h"
 
-namespace mediakit{
+namespace mediakit {
 
-class MultiMuxerPrivate : public MediaSink, public std::enable_shared_from_this<MultiMuxerPrivate>{
+class MultiMediaSourceMuxer : public MediaSourceEventInterceptor, public MediaSink, public std::enable_shared_from_this<MultiMediaSourceMuxer>{
 public:
-    friend class MultiMediaSourceMuxer;
-    typedef std::shared_ptr<MultiMuxerPrivate> Ptr;
-    class Listener{
+    using Ptr = std::shared_ptr<MultiMediaSourceMuxer>;
+    using RingType = toolkit::RingBuffer<Frame::Ptr>;
+
+    class Listener {
     public:
-        Listener() = default;
         virtual ~Listener() = default;
         virtual void onAllTrackReady() = 0;
     };
 
-    ~MultiMuxerPrivate() override;
-
-private:
-    MultiMuxerPrivate(const string &vhost,const string &app, const string &stream,float dur_sec,
-                      bool enable_rtsp, bool enable_rtmp, bool enable_hls, bool enable_mp4);
-    void resetTracks() override;
-    void setMediaListener(const std::weak_ptr<MediaSourceEvent> &listener);
-    int totalReaderCount() const;
-    void setTimeStamp(uint32_t stamp);
-    void setTrackListener(Listener *listener);
-    bool setupRecord(MediaSource &sender, Recorder::type type, bool start, const string &custom_path);
-    bool isRecording(MediaSource &sender, Recorder::type type);
-    bool isEnabled();
-    void onTrackReady(const Track::Ptr & track) override;
-    void onTrackFrame(const Frame::Ptr &frame) override;
-    void onAllTrackReady() override;
-
-private:
-    string _stream_url;
-    Listener *_track_listener = nullptr;
-    RtmpMediaSourceMuxer::Ptr _rtmp;
-    RtspMediaSourceMuxer::Ptr _rtsp;
-    HlsRecorder::Ptr _hls;
-    MediaSinkInterface::Ptr _mp4;
-    std::weak_ptr<MediaSourceEvent> _listener;
-};
-
-class MultiMediaSourceMuxer : public MediaSourceEventInterceptor, public MediaSinkInterface, public MultiMuxerPrivate::Listener, public std::enable_shared_from_this<MultiMediaSourceMuxer>{
-public:
-    typedef MultiMuxerPrivate::Listener Listener;
-    typedef std::shared_ptr<MultiMediaSourceMuxer> Ptr;
-
-    ~MultiMediaSourceMuxer() override;
-    MultiMediaSourceMuxer(const string &vhost, const string &app, const string &stream, float dur_sec = 0.0,
-                          bool enable_rtsp = true, bool enable_rtmp = true, bool enable_hls = true, bool enable_mp4 = false);
+    MultiMediaSourceMuxer(const MediaTuple& tuple, float dur_sec = 0.0,const ProtocolOption &option = ProtocolOption());
 
     /**
      * 设置事件监听器
@@ -75,10 +45,10 @@ public:
     void setMediaListener(const std::weak_ptr<MediaSourceEvent> &listener);
 
      /**
-      * 随着Track就绪事件监听器
+      * 设置Track就绪事件监听器
       * @param listener 事件监听器
      */
-    void setTrackListener(const std::weak_ptr<MultiMuxerPrivate::Listener> &listener);
+    void setTrackListener(const std::weak_ptr<Listener> &listener);
 
     /**
      * 返回总的消费者个数
@@ -96,14 +66,12 @@ public:
      */
     void setTimeStamp(uint32_t stamp);
 
-    /////////////////////////////////MediaSourceEvent override/////////////////////////////////
-
     /**
-     * 获取所有Track
-     * @param trackReady 是否筛选过滤未就绪的track
-     * @return 所有Track
+     * 重置track
      */
-    vector<Track::Ptr> getTracks(MediaSource &sender, bool trackReady = true) const override;
+    void resetTracks() override;
+
+    /////////////////////////////////MediaSourceEvent override/////////////////////////////////
 
     /**
      * 观看总人数
@@ -119,7 +87,7 @@ public:
      * @param custom_path 开启录制时，指定自定义路径
      * @return 是否设置成功
      */
-    bool setupRecord(MediaSource &sender, Recorder::type type, bool start, const string &custom_path) override;
+    bool setupRecord(MediaSource &sender, Recorder::type type, bool start, const std::string &custom_path, size_t max_second) override;
 
     /**
      * 获取录制状态
@@ -136,53 +104,86 @@ public:
      * @param is_udp 是否为udp
      * @param cb 启动成功或失败回调
      */
-    void startSendRtp(MediaSource &sender, const string &dst_url, uint16_t dst_port, uint32_t ssrc, bool is_udp, const function<void(const SockException &ex)> &cb) override;
+    void startSendRtp(MediaSource &sender, const MediaSourceEvent::SendRtpArgs &args, const std::function<void(uint16_t, const toolkit::SockException &)> cb) override;
 
     /**
      * 停止ps-rtp发送
      * @return 是否成功
      */
-    bool stopSendRtp(MediaSource &sender) override;
-
-    /////////////////////////////////MediaSinkInterface override/////////////////////////////////
+    bool stopSendRtp(MediaSource &sender, const std::string &ssrc) override;
 
     /**
-    * 添加track，内部会调用Track的clone方法
-    * 只会克隆sps pps这些信息 ，而不会克隆Delegate相关关系
-    * @param track 添加音频或视频轨道
+     * 获取所有Track
+     * @param trackReady 是否筛选过滤未就绪的track
+     * @return 所有Track
+     */
+    std::vector<Track::Ptr> getMediaTracks(MediaSource &sender, bool trackReady = true) const override;
+
+    /**
+     * 获取所属线程
+     */
+    toolkit::EventPoller::Ptr getOwnerPoller(MediaSource &sender) override;
+
+    /**
+     * 获取本对象
+     */
+    std::shared_ptr<MultiMediaSourceMuxer> getMuxer(MediaSource &sender) override;
+
+    const ProtocolOption &getOption() const;
+    const MediaTuple &getMediaTuple() const;
+    std::string shortUrl() const;
+
+    void forEachRtpSender(const std::function<void(const std::string &ssrc)> &cb) const;
+
+protected:
+    /////////////////////////////////MediaSink override/////////////////////////////////
+
+    /**
+    * 某track已经准备好，其ready()状态返回true，
+    * 此时代表可以获取其例如sps pps等相关信息了
+    * @param track
     */
-    void addTrack(const Track::Ptr &track) override;
+    bool onTrackReady(const Track::Ptr & track) override;
 
     /**
-     * 添加track完毕
-     */
-    void addTrackCompleted() override;
-
-    /**
-     * 重置track
-     */
-    void resetTracks() override;
-
-    /**
-     * 写入帧数据
-     * @param frame 帧
-     */
-    void inputFrame(const Frame::Ptr &frame) override;
-
-    /////////////////////////////////MultiMuxerPrivate::Listener override/////////////////////////////////
-
-    /**
-     * 所有track全部就绪
+     * 所有Track已经准备好，
      */
     void onAllTrackReady() override;
 
+    /**
+     * 某Track输出frame，在onAllTrackReady触发后才会调用此方法
+     * @param frame
+     */
+    bool onTrackFrame(const Frame::Ptr &frame) override;
+    bool onTrackFrame_l(const Frame::Ptr &frame);
+
 private:
-    Stamp _stamp[2];
-    MultiMuxerPrivate::Ptr _muxer;
-    std::weak_ptr<MultiMuxerPrivate::Listener> _track_listener;
-#if defined(ENABLE_RTPPROXY)
-    PSRtpSender::Ptr _ps_rtp_sender;
-#endif //ENABLE_RTPPROXY
+    void createGopCacheIfNeed();
+
+private:
+    bool _is_enable = false;
+    bool _create_in_poller = false;
+    bool _video_key_pos = false;
+    float _dur_sec;
+    std::shared_ptr<class FramePacedSender> _paced_sender;
+    MediaTuple _tuple;
+    ProtocolOption _option;
+    toolkit::Ticker _last_check;
+    std::unordered_map<int, Stamp> _stamps;
+    std::weak_ptr<Listener> _track_listener;
+    std::unordered_multimap<std::string, RingType::RingReader::Ptr> _rtp_sender;
+    FMP4MediaSourceMuxer::Ptr _fmp4;
+    RtmpMediaSourceMuxer::Ptr _rtmp;
+    RtspMediaSourceMuxer::Ptr _rtsp;
+    TSMediaSourceMuxer::Ptr _ts;
+    MediaSinkInterface::Ptr _mp4;
+    HlsRecorder::Ptr _hls;
+    HlsFMP4Recorder::Ptr _hls_fmp4;
+    toolkit::EventPoller::Ptr _poller;
+    RingType::Ptr _ring;
+
+    //对象个数统计
+    toolkit::ObjectStatistic<MultiMediaSourceMuxer> _statistic;
 };
 
 }//namespace mediakit

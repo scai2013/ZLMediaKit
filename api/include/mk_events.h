@@ -1,9 +1,9 @@
 ﻿/*
- * Copyright (c) 2016 The ZLMediaKit project authors. All Rights Reserved.
+ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
  *
- * This file is part of ZLMediaKit(https://github.com/xiongziliang/ZLMediaKit).
+ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
  *
- * Use of this source code is governed by MIT license that can be found in the
+ * Use of this source code is governed by MIT-like license that can be found in the
  * LICENSE file in the root of the source tree. All contributing project authors
  * may be found in the AUTHORS file in the root of the source tree.
  */
@@ -53,8 +53,10 @@ typedef struct {
      * 未找到流后会广播该事件，请在监听该事件后去拉流或其他方式产生流，这样就能按需拉流了
      * @param url_info 播放url相关信息
      * @param sender 播放客户端相关信息
+     * @return 1 直接关闭
+     *         0 等待流注册
      */
-    void (API_CALL *on_mk_media_not_found)(const mk_media_info url_info,
+    int (API_CALL *on_mk_media_not_found)(const mk_media_info url_info,
                                            const mk_sock_info sender);
 
     /**
@@ -148,10 +150,60 @@ typedef struct {
      * @param is_player 客户端是否为播放器
      */
     void (API_CALL *on_mk_flow_report)(const mk_media_info url_info,
-                                       uint64_t total_bytes,
-                                       uint64_t total_seconds,
+                                       size_t total_bytes,
+                                       size_t total_seconds,
                                        int is_player,
                                        const mk_sock_info sender);
+
+
+    /**
+     * 日志输出广播
+     * @param level 日志级别
+     * @param file 源文件名
+     * @param line 源文件行
+     * @param function 源文件函数名
+     * @param message 日志内容
+     */
+    void (API_CALL *on_mk_log)(int level, const char *file, int line, const char *function, const char *message);
+
+    /**
+     * 发送rtp流失败回调，适用于mk_media_source_start_send_rtp/mk_media_start_send_rtp接口触发的rtp发送
+     * @param vhost 虚拟主机
+     * @param app 应用名
+     * @param stream 流id
+     * @param ssrc ssrc的10进制打印，通过atoi转换为整型
+     * @param err 错误代码
+     * @param msg 错误提示
+     */
+    void(API_CALL *on_mk_media_send_rtp_stop)(const char *vhost, const char *app, const char *stream, const char *ssrc, int err, const char *msg);
+
+    /**
+     * rtc sctp连接中/完成/失败/关闭回调
+     * @param rtc_transport 数据通道对象
+     */
+    void(API_CALL *on_mk_rtc_sctp_connecting)(mk_rtc_transport rtc_transport);
+    void(API_CALL *on_mk_rtc_sctp_connected)(mk_rtc_transport rtc_transport);
+    void(API_CALL *on_mk_rtc_sctp_failed)(mk_rtc_transport rtc_transport);
+    void(API_CALL *on_mk_rtc_sctp_closed)(mk_rtc_transport rtc_transport);
+
+    /**
+     * rtc数据通道发送数据回调
+     * @param rtc_transport 数据通道对象
+     * @param msg 数据
+     * @param len 数据长度
+     */
+    void(API_CALL *on_mk_rtc_sctp_send)(mk_rtc_transport rtc_transport, const uint8_t *msg, size_t len);
+
+    /**
+     * rtc数据通道接收数据回调
+     * @param rtc_transport 数据通道对象
+     * @param streamId 流id
+     * @param ppid 协议id
+     * @param msg 数据
+     * @param len 数据长度
+     */
+    void(API_CALL *on_mk_rtc_sctp_received)(mk_rtc_transport rtc_transport, uint16_t streamId, uint32_t ppid, const uint8_t *msg, size_t len);
+
 } mk_events;
 
 
@@ -166,4 +218,3 @@ API_EXPORT void API_CALL mk_events_listen(const mk_events *events);
 }
 #endif
 #endif //MK_EVENTS_H
-
